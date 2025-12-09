@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.shophub.ordertracking.grpc";
+option java_outer_classname = "OrderTrackingProto";
+
+service OrderTrackingService {
+  // Le serveur envoie un FLUX (Stream) de mises à jour
+  rpc streamOrderStatus (OrderRequest) returns (stream OrderStatusUpdate);
+}
+
+message OrderRequest {
+  string orderId = 1;
+}
+
+message OrderStatusUpdate {
+  string status = 1;
+  string message = 2;
+  string timestamp = 3;
+}

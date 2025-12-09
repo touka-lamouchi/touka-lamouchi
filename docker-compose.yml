@@ -1,0 +1,169 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: shop-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - shophub-network
+
+  # Product Service
+  product-service:
+    image: product-service:latest
+    container_name: product-service
+    ports:
+      - "8081:8081"
+    environment:
+      SERVER_PORT: 8081
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-db:5432/shophub_products
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: "false"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    networks:
+      - shophub-network
+    restart: on-failure
+
+  # Payment Service
+  payment-service:
+    build:
+      context: ./payment-service
+      dockerfile: Dockerfile
+    image: payment-service:latest
+    container_name: payment-service
+    ports:
+      - "8082:8082"
+    environment:
+      SERVER_PORT: 8082
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-db:5432/shophub_payments
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: "false"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    networks:
+      - shophub-network
+    restart: on-failure
+
+  # Customer Portal Service
+  customer-portal-service:
+    image: customer-portal-service:latest
+    container_name: customer-portal-service
+    ports:
+      - "8083:8083"
+    environment:
+      SERVER_PORT: 8083
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-db:5432/shophub_customers
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: "false"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    networks:
+      - shophub-network
+    restart: on-failure
+
+  # Order Tracking Service
+  order-tracking-service:
+    image: order-tracking-service:latest
+    container_name: order-tracking-service
+    ports:
+      - "8086:8086"
+      - "8084:8084"
+    environment:
+      SERVER_PORT: 8086
+      GRPC_SERVER_PORT: 8084
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-db:5432/shophub_orders
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: "false"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    networks:
+      - shophub-network
+    restart: on-failure
+
+  # Orchestrator Service
+  orchestrator-service:
+    image: orchestrator-service:latest
+    container_name: orchestrator-service
+    ports:
+      - "8085:8085"
+    environment:
+      SERVER_PORT: 8085
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-db:5432/shophub_orders
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: "false"
+      SERVICE_PRODUCT_URL: http://product-service:8081
+      SERVICE_PAYMENT_URL: http://payment-service:8082/ws/payments
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      product-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+    networks:
+      - shophub-network
+    restart: on-failure
+
+  # API Gateway
+  api-gateway:
+    image: api-gateway:latest
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      SERVER_PORT: 8080
+      SPRING_CLOUD_GATEWAY_ROUTES[0]_ID: orchestrator-service
+      SPRING_CLOUD_GATEWAY_ROUTES[0]_URI: http://orchestrator-service:8085
+      SPRING_CLOUD_GATEWAY_ROUTES[0]_PREDICATES[0]: Path=/api/orchestrator/**
+      SPRING_CLOUD_GATEWAY_ROUTES[1]_ID: product-service
+      SPRING_CLOUD_GATEWAY_ROUTES[1]_URI: http://product-service:8081
+      SPRING_CLOUD_GATEWAY_ROUTES[1]_PREDICATES[0]: Path=/api/products/**
+      SPRING_CLOUD_GATEWAY_ROUTES[2]_ID: order-tracking-service
+      SPRING_CLOUD_GATEWAY_ROUTES[2]_URI: http://order-tracking-service:8086
+      SPRING_CLOUD_GATEWAY_ROUTES[2]_PREDICATES[0]: Path=/api/orders/**
+      SPRING_CLOUD_GATEWAY_ROUTES[3]_ID: customer-portal-service
+      SPRING_CLOUD_GATEWAY_ROUTES[3]_URI: http://customer-portal-service:8083
+      SPRING_CLOUD_GATEWAY_ROUTES[3]_PREDICATES[0]: Path=/graphql/**
+      SPRING_CLOUD_GATEWAY_ROUTES[4]_ID: payment-service
+      SPRING_CLOUD_GATEWAY_ROUTES[4]_URI: http://payment-service:8082
+      SPRING_CLOUD_GATEWAY_ROUTES[4]_PREDICATES[0]: Path=/api/payments/**
+    depends_on:
+      - orchestrator-service
+    networks:
+      - shophub-network
+    restart: on-failure
+
+networks:
+  shophub-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
