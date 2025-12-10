@@ -1,0 +1,42 @@
+server:
+  port: 8080
+
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      routes:
+        # Route vers Payment Service (SOAP) - MUST BE FIRST
+        - id: payment-service-soap
+          uri: http://payment-service:8082
+          predicates:
+            - Path=/ws,/ws/**
+        
+        # Route vers Product Service
+        - id: product-service
+          uri: http://product-service:8081
+          predicates:
+            - Path=/api/products/**
+
+        # Route vers Orchestrator Service
+        - id: orchestrator-service
+          uri: http://orchestrator-service:8085
+          predicates:
+            - Path=/api/orchestrator/**
+
+        # Route vers Customer Portal (GraphQL)
+        - id: customer-service
+          uri: http://customer-portal-service:8083
+          predicates:
+            - Path=/graphiql/**, /graphql/**
+
+        # Route vers Order Tracking Service
+        - id: order-tracking-service
+          uri: http://order-tracking-service:8086
+          predicates:
+            - Path=/api/orders/**

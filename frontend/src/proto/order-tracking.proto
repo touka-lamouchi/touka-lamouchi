@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package ordertracking;
+
+service OrderTrackingService {
+  rpc streamOrderStatus (OrderRequest) returns (stream OrderStatusUpdate);
+}
+
+message OrderRequest {
+  string orderId = 1;
+}
+
+message OrderStatusUpdate {
+  string status = 1;
+  string message = 2;
+  string timestamp = 3;
+}
